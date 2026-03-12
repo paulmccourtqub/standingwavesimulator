@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transmission Line Waves - Persistence Mode</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            background-color: #fff;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+        }
+        .btn {
+            padding: 10px 20px;
+            font-size: 0.9em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #007bff;
+            background-color: #007bff;
+            color: white;
+            transition: background 0.2s;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn.active { background-color: #28a745; border-color: #28a745; }
+        
+        input[type="range"] { width: 200px; cursor: pointer; }
+        
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 0.9em;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .line { width: 30px; height: 2px; }
+        .line.incident { border-top: 2px dashed blue; height: 0; }
+        .line.reflected { border-top: 2px dashed red; height: 0; }
+        .line.total { background: black; height: 2px; }
+        .line.persist { background: rgba(0,0,0,0.15); height: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Transmission Line: Persistence View</h2>
+    <canvas id="waveCanvas" width="800" height="400"></canvas>
+    
+    <div class="controls">
+        <div>
+            <label for="gammaSlider">Reflection (&Gamma;): </label>
+            <input type="range" id="gammaSlider" min="-1" max="1" step="0.01" value="0.5">
+            <span id="gammaValue">0.50</span>
+        </div>
+        
+        <button id="persistBtn" class="btn">Persistence: OFF</button>
+        <button id="clearBtn" class="btn" style="background:#6c757d; border-color:#6c757d;">Clear Buffer</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="line incident"></div> Incident</div>
+        <div class="legend-item"><div class="line reflected"></div> Reflected</div>
+        <div class="legend-item"><div class="line total"></div> Total</div>
+        <div class="legend-item"><div class="line persist"></div> Persistence</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Create an off-screen canvas to store persistence data
+    const pCanvas = document.createElement('canvas');
+    pCanvas.width = canvas.width;
+    pCanvas.height = canvas.height;
+    const pCtx = pCanvas.getContext('2d');
+
+    const gammaSlider = document.getElementById('gammaSlider');
+    const gammaValue = document.getElementById('gammaValue');
+    const persistBtn = document.getElementById('persistBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let time = 0;
+    let isPersistenceOn = false;
+    const timeStep = 0.06;
+    const amplitude = 60;
+    const wavelength = 200;
+    const beta = 2 * Math.PI / wavelength;
+    const omega = 0.1;
+
+    // Toggle Persistence
+    persistBtn.addEventListener('click', () => {
+        isPersistenceOn = !isPersistenceOn;
+        persistBtn.textContent = `Persistence: ${isPersistenceOn ? 'ON' : 'OFF'}`;
+        persistBtn.classList.toggle('active', isPersistenceOn);
+    });
+
+    // Clear Persistence Buffer
+    clearBtn.addEventListener('click', () => {
+        pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+    });
+
+    gammaSlider.addEventListener('input', function() {
+        gammaValue.textContent = parseFloat(this.value).toFixed(2);
+        // Clearing buffer on slider change prevents messy overlaps
+        if (isPersistenceOn) pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+    });
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const centerY = canvas.height / 2;
+        const gamma = parseFloat(gammaSlider.value);
+
+        // Define the paths
+        const pathInc = new Path2D();
+        const pathRef = new Path2D();
+        const pathTot = new Path2D();
+
+        for (let x = 0; x <= canvas.width; x++) {
+            const z = x - canvas.width; 
+            const vInc = amplitude * Math.cos(omega * time - beta * z);
+            const vRef = gamma * amplitude * Math.cos(omega * time + beta * z);
+            const vTot = vInc + vRef;
+
+            if (x === 0) {
+                pathInc.moveTo(x, centerY - vInc);
+                pathRef.moveTo(x, centerY - vRef);
+                pathTot.moveTo(x, centerY - vTot);
+            } else {
+                pathInc.lineTo(x, centerY - vInc);
+                pathRef.lineTo(x, centerY - vRef);
+                pathTot.lineTo(x, centerY - vTot);
+            }
+        }
+
+        // 1. If persistence is ON, record current Total Wave to the buffer
+        if (isPersistenceOn) {
+            pCtx.strokeStyle = 'rgba(0, 0, 0, 0.05)'; // Faint lines
+            pCtx.lineWidth = 1;
+            pCtx.stroke(pathTot);
+            
+            // Draw the accumulated buffer onto main canvas
+            ctx.drawImage(pCanvas, 0, 0);
+        }
+
+        // 2. Draw Incident (Blue)
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+        ctx.stroke(pathInc);
+
+        // 3. Draw Reflected (Red)
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.stroke(pathRef);
+
+        // 4. Draw Current Total (Black)
+        ctx.setLineDash([]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000';
+        ctx.stroke(pathTot);
+
+        time += timeStep;
+        requestAnimationFrame(draw);
+    }
+
+    draw();
+</script>
+</body>
+</html>
